@@ -1,18 +1,54 @@
-import sys
-import signal
-from flask import Flask, jsonify
+from fastapi import FastAPI, HTTPException
+from models import Produit
+import sqlite3
+import os
 
-app = Flask(__name__)
+app = FastAPI(title="PharmaStock API", version="1.0")
 
-def signal_handler():
-    print('Arrêt propre du serveur...')
-    sys.exit(0)
+DB_PATH = os.getenv("DATA_PATH", "/app/data/pharmacy.db")
 
-signal.signal(signal.SIGTERM, signal_handler)
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS produits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nom TEXT NOT NULL,
+                lot TEXT NOT NULL,
+                expiration TEXT NOT NULL,
+                quantite INTEGER NOT NULL
+            )
+        """)
+        conn.commit()
 
-@app.get("/api/hello")
-def hello():
-    return jsonify(message="Hello World depuis le back !")
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+@app.get("/")
+def read_root():
+    return {"message": "Hello depuis le backend FastAPI"}
+
+@app.post("/api/produits")
+def ajouter_produit(produit: Produit):
+    try:
+          with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO produits (nom, lot, expiration, quantite) VALUES (?, ?, ?, ?)",
+                (produit.nom, produit.lot, produit.expiration, produit.quantite)
+            )
+            conn.commit()
+            conn.close()
+            return {"status": "success", "message": f"Produit {produit.nom} ajouté avec succès."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/produits")
+def lister_produits():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM produits")
+        rows = cursor.fetchall()
+    return [dict(row) for row in rows]
