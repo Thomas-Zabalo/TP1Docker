@@ -1,6 +1,14 @@
+import sys
+import signal
 from flask import Flask, jsonify
 
 app = Flask(__name__)
+
+def signal_handler():
+    print('Arrêt propre du serveur...')
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
 
 @app.get("/api/hello")
 def hello():
