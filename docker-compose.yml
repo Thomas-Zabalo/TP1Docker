@@ -1,15 +1,38 @@
+version: '3.8'
+
 services:
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-
-  backend:
-    build: ./backend
-    ports:
-      - "5000:5000"
-
   nginx:
     build: ./nginx
     ports:
       - "80:80"
+    networks:
+      - app-network
+    depends_on:
+      - frontend
+      - backend
+
+  frontend:
+    build: ./frontend
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
+  backend:
+    build: ./backend
+    networks:
+      - app-network
+    volumes:
+      - ./backend_data:/app/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+networks:
+  app-network:
+    driver: bridge
