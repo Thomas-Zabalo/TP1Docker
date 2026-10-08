@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="utf-8">
+    <title>TP Docker</title>
+</head>
+
+<body>
+    <div id="root"></div>
+    <script>document.getElementById("root").innerHTML = `
+        <h1>TP Docker</h1>
+        <p>Réponse du back : <strong id="msg">chargement...</strong></p>
+        `;
+
+        fetch("/api/hello")
+            .then((r) => r.json())
+            .then((data) => { document.getElementById("msg").textContent = data.message; })
+            .catch(() => { document.getElementById("msg").textContent = "erreur d'appel à l'API"; });
+    </script>
+</body>
+
+</html>
