@@ -1,9 +1,11 @@
 version: '3.8'
 
 services:
+  # Point d'entrée HTTP : distribue les requêtes vers le frontend ou l'API.
   nginx:
     build: ./nginx
     ports:
+      # Publie Nginx sur le port 80 de la machine.
       - "80:80"
     networks:
       - app-network
@@ -11,6 +13,7 @@ services:
       - frontend
       - backend
 
+  # Sert les fichiers statiques générés par le build React.
   frontend:
     build: ./frontend
     networks:
@@ -18,14 +21,17 @@ services:
     deploy:
       resources:
         limits:
+          # Plafonds de ressources du conteneur frontend.
           cpus: '0.50'
           memory: 256M
 
+  # API FastAPI et accès à la base SQLite.
   backend:
     build: ./backend
     networks:
       - app-network
     volumes:
+      # Conserve la base sur l'hôte lors du remplacement du conteneur.
       - ./backend_data:/app/data
     deploy:
       resources:
