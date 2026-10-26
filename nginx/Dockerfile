@@ -7,4 +7,5 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
+# Lance nginx au premier plan pour que Docker garde le conteneur en vie.
 CMD ["nginx", "-g", "daemon off;"]

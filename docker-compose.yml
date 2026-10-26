@@ -5,8 +5,7 @@ services:
   nginx:
     build: ./nginx
     ports:
-      # Publie Nginx sur le port 80 de la machine.
-      - "80:80"
+      - "80:80"          # Seul port exposé vers l'extérieur (choix volontaire).
     networks:
       - app-network
     depends_on:

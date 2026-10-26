@@ -8,14 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-
 RUN pip install -r requirements.txt
 
 COPY . .
-
 RUN mkdir -p /app/data
 
 # Le port utilisé par Uvicorn et le reverse proxy Nginx.
 EXPOSE 5000
 
+# --host 0.0.0.0 : indispensable pour être joignable depuis l'extérieur du conteneur.
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5000"]
