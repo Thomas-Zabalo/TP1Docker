@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /workspace
+
+COPY backend/requirements-dev.txt ./backend/requirements-dev.txt
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements-dev.txt
+
+COPY backend ./backend
+COPY ci/run-tests.sh ./ci/run-tests.sh
+
+RUN sed -i 's/\r$//' /workspace/ci/run-tests.sh \
+    && mkdir -p /reports
+
+CMD ["sh", "/workspace/ci/run-tests.sh"]

@@ -1,0 +1,16 @@
+services:
+  lint:
+    image: tp1docker-ci-lint
+    build:
+      context: ..
+      dockerfile: ci/Dockerfile.lint
+    volumes:
+      - ./reports:/reports
+
+  test:
+    image: tp1docker-ci-test
+    build:
+      context: ..
+      dockerfile: ci/Dockerfile.test
+    volumes:
+      - ./reports:/reports
