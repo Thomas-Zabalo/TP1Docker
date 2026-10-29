@@ -13,6 +13,10 @@ par Docker Compose :
 ## Sommaire
 
 - [Architecture](#architecture)
+- [Images, dépendances et commandes](#images-dépendances-et-commandes)
+- [Réglage des ressources](#réglage-des-ressources)
+- [Configuration avec .env](#configuration-avec-env)
+- [Lancer les vérifications CI](#lancer-les-vérifications-ci)
 - [Justification des limites de ressources](#justification-des-limites-de-ressources)
 - [Démarrage rapide](#démarrage-rapide)
 - [Benchmarks CPU et mémoire](#benchmarks-cpu-et-mémoire)
@@ -27,7 +31,7 @@ flowchart LR
     browser["Navigateur web"]
 
     subgraph compose["Docker Compose - réseau app-network (bridge)"]
-        nginx["nginx<br/>Reverse proxy<br/>port hôte 80 → conteneur 80<br/>(pas de limite : trafic faible)"]
+        nginx["nginx<br/>Reverse proxy<br/>port hôte 80 → conteneur 80<br/>0,25 CPU / 128 MiB"]
         frontend["frontend<br/>Nginx + fichiers React statiques<br/>0,5 CPU / 256 MiB<br/>(suffisant : Nginx sert des fichiers, pas de Node au runtime)"]
         backend["backend<br/>FastAPI + Uvicorn :5000<br/>1 CPU / 512 MiB<br/>(1 worker → 1 CPU exploitable)"]
 
@@ -46,6 +50,79 @@ Le navigateur accède à l'application via le port 80 publié par Nginx. Nginx
 sert les fichiers statiques du frontend et transmet les requêtes `/api/*` au
 backend. La base SQLite du backend est conservée sur l'hôte dans
 `backend_data/`.
+
+### Images, dépendances et commandes
+
+Les services applicatifs et CI sont construits depuis les Dockerfiles du dépôt.
+Les images de base officielles servent de fondation ; les configurations et
+contenus propres au projet sont ajoutés lors de la construction.
+
+| Service | Image de base et personnalisation | Dépendances / opérations système | Commande et arrêt |
+|---|---|---|---|
+| `nginx` | `nginx:alpine`, configuration de reverse proxy copiée dans `/etc/nginx/conf.d/default.conf` à la place de la configuration par défaut | Aucune installation supplémentaire | `nginx -g "daemon off;"` reste au premier plan ; Nginx reçoit `SIGTERM` directement comme processus PID 1 et arrête proprement les workers. |
+| `frontend` | Construction multi-étape : `node:22-alpine` construit React/Vite, puis les fichiers `dist/` sont copiés dans `nginx:alpine` | `npm install` installe les dépendances définies dans `frontend/package.json` ; aucune dépendance Node n'est présente dans l'image d'exécution | Nginx sert les fichiers statiques sur le port 80 et reçoit directement `SIGTERM` comme PID 1. |
+| `backend` | `python:3.11-slim`, application FastAPI copiée dans `/app` | `apt-get` installe `curl` pour les diagnostics, puis `pip` installe `backend/requirements.txt` (FastAPI, Uvicorn, Pydantic) ; le cache APT est supprimé pour réduire l'image | `uvicorn app:app --host 0.0.0.0 --port 5000` ; Uvicorn reçoit directement `SIGTERM` comme PID 1 et gère l'arrêt gracieux. |
+| `lint` (CI) | `node:22-bookworm`, outils Python et code frontend/backend copiés dans l'image | APT installe `python3` et `python3-venv`. Ruff `0.11.13` est installé dans l'environnement isolé `/opt/ruff`. `npm ci` installe depuis `frontend/package-lock.json` React, React DOM, ESLint et ses plugins, Vite, Tailwind CSS et son plugin Vite. | `ci/run-lint.sh` lance Ruff (`check` et vérification du formatage), ESLint puis le build Vite. Les sorties de chaque contrôle sont enregistrées dans `/reports/`. |
+| `test` (CI) | `python:3.11-slim`, code backend et script de test copiés dans l'image | `pip` installe `backend/requirements-dev.txt` : FastAPI `0.110.0`, Uvicorn `0.28.0`, Pydantic `2.6.4` (via `requirements.txt`), ainsi que `httpx 0.27.2`, `pytest 8.3.5` et Ruff `0.11.13`. Ruff est installé dans cette image mais n'est pas exécuté par le script de tests. | `ci/run-tests.sh` lance `python -m pytest tests`, écrit la sortie dans `/reports/backend-tests.txt` et génère le rapport JUnit `/reports/backend-tests.xml`. |
+
+Les ports déclarés par les images ne les publient pas à eux seuls sur l'hôte :
+seul le port 80 du service `nginx` est publié par le Compose principal. Les
+services frontend et backend sont accessibles aux autres conteneurs sur le
+réseau privé `app-network`.
+
+### Réglage des ressources
+
+Chaque service dispose d'une limite CPU et mémoire dans Compose. Les valeurs
+par défaut sont adaptées à une petite stack de démonstration ; elles peuvent
+être remplacées par des variables d'environnement sans modifier les fichiers :
+
+| Service | CPU par défaut | Mémoire par défaut | Variables Compose |
+|---|---:|---:|---|
+| `nginx` | 0,25 | 128 MiB | `NGINX_CPUS`, `NGINX_MEMORY` |
+| `frontend` | 0,50 | 256 MiB | `FRONTEND_CPUS`, `FRONTEND_MEMORY` |
+| `backend` | 1,0 | 512 MiB | `BACKEND_CPUS`, `BACKEND_MEMORY` |
+| `lint` (CI) | 1,0 | 1 GiB | `CI_LINT_CPUS`, `CI_LINT_MEMORY` |
+| `test` (CI) | 0,50 | 512 MiB | `CI_TEST_CPUS`, `CI_TEST_MEMORY` |
+
+Exemple PowerShell pour démarrer avec une limite différente :
+
+```powershell
+$env:BACKEND_CPUS = "0.75"
+$env:BACKEND_MEMORY = "768M"
+docker compose up --build
+```
+
+Les valeurs sont des limites maximales, pas des ressources réservées. Elles
+sont déclarées dans le fichier `.env` à la racine, chargé automatiquement par
+Docker Compose.
+
+### Configuration avec `.env`
+
+Le fichier `.env` à la racine centralise le port HTTP publié, le chemin de
+persistance SQLite et les limites CPU/mémoire des services applicatifs et CI.
+Il est ignoré par Git pour éviter de publier une configuration locale ; le
+fichier `.env.example`, qui contient les valeurs par défaut sans secret, est
+versionné comme modèle. Après un clone, créez votre `.env` depuis ce modèle :
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Modifiez ensuite les valeurs dans `.env`. Par exemple, `HTTP_PORT=8080`
+publie l'application sur le port hôte 8080, tandis que `BACKEND_DATA_DIR`
+permet de déplacer le dossier de données. Les réglages `CI_LINT_*` et
+`CI_TEST_*` s'appliquent aux services du fichier `ci/compose.ci.yml`.
+
+### Lancer les vérifications CI
+
+```sh
+docker compose -f ci/compose.ci.yml run --build --rm lint
+docker compose -f ci/compose.ci.yml run --build --rm test
+```
+
+Les rapports sont écrits dans `ci/reports/` sur l'hôte. Les scripts exécutent
+les contrôles séquentiellement et retournent un code d'échec si un contrôle
+échoue.
 
 ---
 
@@ -67,10 +144,10 @@ charge de l'application.
   commande `uvicorn app:app` démarre un seul worker ; le plafond d'un CPU est
   cohérent avec cette configuration simple, mais ne garantit pas à lui seul
   que la capacité ou la mémoire suffiront sous charge.
-- **Nginx (reverse proxy) — aucun plafond configuré.** Le service est laissé
-  sans limite explicite afin de ne pas ajouter un plafond arbitraire au point
-  d'entrée de la stack. En contrepartie, sa consommation n'est pas bornée par
-  Compose.
+- **Nginx (reverse proxy) — 0,25 CPU / 128 MiB.** Nginx relaie les requêtes
+  vers le frontend et le backend sans exécuter de logique applicative lourde.
+  Ce plafond modeste est un point de départ pour la démonstration et reste
+  réglable comme les autres limites.
 
 Ces raisons justifient l'**ordre de grandeur relatif** des choix, pas leur
 adéquation à une charge précise. Les benchmarks Sysbench de la section suivante
