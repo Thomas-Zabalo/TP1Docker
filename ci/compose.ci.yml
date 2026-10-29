@@ -6,6 +6,11 @@ services:
       dockerfile: ci/Dockerfile.lint
     volumes:
       - ./reports:/reports
+    deploy:
+      resources:
+        limits:
+          cpus: "${CI_LINT_CPUS:-1.0}"
+          memory: "${CI_LINT_MEMORY:-1G}"
 
   test:
     image: tp1docker-ci-test
@@ -14,3 +19,8 @@ services:
       dockerfile: ci/Dockerfile.test
     volumes:
       - ./reports:/reports
+    deploy:
+      resources:
+        limits:
+          cpus: "${CI_TEST_CPUS:-0.50}"
+          memory: "${CI_TEST_MEMORY:-512M}"
